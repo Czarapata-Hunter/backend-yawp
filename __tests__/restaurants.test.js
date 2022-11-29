@@ -2,6 +2,14 @@ const pool = require('../lib/utils/pool');
 const setup = require('../data/setup');
 const app = require('../lib/app');
 const request = require('supertest');
+const UserService = require('../lib/services/UserService');
+
+const mockMe = {
+  firstName: 'Madison',
+  lastName: 'Czarapata',
+  email: 'madison@test.com',
+  password: '654321',
+};
 
 describe('restaurant routes', () => {
   beforeEach(() => {
@@ -86,6 +94,32 @@ describe('restaurant routes', () => {
           },
         ],
         "website": "http://www.PipsOriginal.com",
+      }
+    `);
+  });
+
+  const registerAndLogin = async () => {
+    const agent = request.agent(app);
+    const user = await UserService.create(mockMe);
+    await agent
+      .post('/api/v1/users/sessions')
+      .send({ email: mockMe.email, password: mockMe.password });
+    return [agent, user];
+  };
+
+  it('POST /api/v1/restaurants/:restId/reviews should create a new review when user is logged in', async () => {
+    const [agent] = await registerAndLogin();
+    const resp = await agent
+      .post('/api/v1/restaurants/1/reviews')
+      .send({ stars: 4, detail: 'Here is the comment you ordered' });
+    expect(resp.status).toBe(200);
+    expect(resp.body).toMatchInlineSnapshot(`
+      Object {
+        "detail": "Here is the comment you ordered",
+        "id": "4",
+        "restaurant_id": "1",
+        "stars": 4,
+        "user_id": "4",
       }
     `);
   });
