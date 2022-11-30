@@ -3,12 +3,22 @@ const setup = require('../data/setup');
 const app = require('../lib/app');
 const request = require('supertest');
 const UserService = require('../lib/services/UserService');
+// const authorizeDelete = require('../lib/models/authorizeDelete');
 
 const mockMe = {
   firstName: 'Madison',
   lastName: 'Czarapata',
   email: 'madison@test.com',
   password: '654321',
+};
+
+const registerAndLogin = async () => {
+  const agent = request.agent(app);
+  const user = await UserService.create(mockMe);
+  await agent
+    .post('/api/v1/users/sessions')
+    .send({ email: mockMe.email, password: mockMe.password });
+  return [agent, user];
 };
 
 describe('restaurant routes', () => {
@@ -74,23 +84,23 @@ describe('restaurant routes', () => {
           Object {
             "detail": "Best restaurant ever!",
             "id": "1",
-            "restaurant_id": "1",
+            "restaurantId": "1",
             "stars": 5,
-            "user_id": "1",
+            "userId": "1",
           },
           Object {
             "detail": "Terrible service :(",
             "id": "2",
-            "restaurant_id": "1",
+            "restaurantId": "1",
             "stars": 1,
-            "user_id": "2",
+            "userId": "2",
           },
           Object {
             "detail": "It was fine.",
             "id": "3",
-            "restaurant_id": "1",
+            "restaurantId": "1",
             "stars": 4,
-            "user_id": "3",
+            "userId": "3",
           },
         ],
         "website": "http://www.PipsOriginal.com",
@@ -98,14 +108,13 @@ describe('restaurant routes', () => {
     `);
   });
 
-  const registerAndLogin = async () => {
-    const agent = request.agent(app);
-    const user = await UserService.create(mockMe);
-    await agent
-      .post('/api/v1/users/sessions')
-      .send({ email: mockMe.email, password: mockMe.password });
-    return [agent, user];
-  };
+  it('POST /api/v1/restaurants/:id/reviews will not create a new review with no logged in user', async () => {
+    const agent = await request.agent(app);
+    const resp = await agent
+      .post('/api/v1/restaurants/1/reviews')
+      .send({ stars: '5', detail: 'New review' });
+    expect(resp.status).toBe(401);
+  });
 
   it('POST /api/v1/restaurants/:restId/reviews should create a new review when user is logged in', async () => {
     const [agent] = await registerAndLogin();
@@ -117,10 +126,48 @@ describe('restaurant routes', () => {
       Object {
         "detail": "Here is the comment you ordered",
         "id": "4",
-        "restaurant_id": "1",
+        "restaurantId": "1",
         "stars": 4,
-        "user_id": "4",
+        "userId": "4",
       }
     `);
+  });
+
+  it('DELETE /api/v1/reviews/:id owner of review can delete review', async () => {
+    const [agent] = await registerAndLogin();
+    await agent
+      .post('/api/v1/restaurants/1/reviews')
+      .send({ stars: '4', detail: 'Latest Review' });
+    const resp = await agent.delete('/api/v1/reviews/4');
+    console.log('message', resp.body.message);
+    expect(resp.status).toBe(200);
+    const revResp = await agent.get('/api/v1/reviews/4');
+    expect(revResp.status).toBe(404);
+  });
+
+  it('DELETE /api/v1/reviews/:id unauthorized users can not delete', async () => {
+    const [agent] = await registerAndLogin();
+    await agent
+      .post('/api/v1/restaurants/1/reviews')
+      .send({ stars: '5', detail: 'New review' });
+    const resp = await agent.delete('/api/v1/reviews/1');
+    expect(resp.status).toBe(403);
+  });
+
+  it('DELETE /api/v1/reviews/:id admin can delete the review', async () => {
+    const agent = request.agent(app);
+    await UserService.create({
+      firstName: 'Hunter',
+      lastName: 'Czarapata',
+      email: 'admin',
+      password: '654321',
+    });
+    await agent
+      .post('/api/v1/users/sessions')
+      .send({ email: 'admin', password: '654321' });
+    const resp = await agent.delete('/api/v1/reviews/1');
+    expect(resp.status).toBe(200);
+    const reviewResp = await agent.get('/api/v1/reviews/1');
+    expect(reviewResp.status).toBe(404);
   });
 });
